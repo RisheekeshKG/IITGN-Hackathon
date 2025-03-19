@@ -1,6 +1,5 @@
 import os
 import sys
-import zipfile
 import requests
 import json
 import dotenv
@@ -19,7 +18,7 @@ tools = [
     "detection_only",
 ]
 
-def _upload_asset(input, description):
+def upload_asset(input, description):
     authorize = requests.post(
         "https://api.nvcf.nvidia.com/v2/nvcf/assets",
         headers={
@@ -44,10 +43,9 @@ def _upload_asset(input, description):
     
     return str(authorize.json()["assetId"])
 
-def _generate_content(task_id, asset_id):
+def generate_content(task_id, asset_id):
     if task_id < 0 or task_id >= len(tools):
-        print(f"task_id should be within [0, {len(tools)-1}]")
-        exit(1)
+        raise ValueError(f"task_id should be within [0, {len(tools)-1}]")
     tool = [{
         "type": "function",
         "function": {"name": tools[task_id]},
@@ -58,13 +56,11 @@ def _generate_content(task_id, asset_id):
     }]
     return content, tool
 
-if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: python test.py <test_image> <result_dir> <task_id>")
-        sys.exit(1)
-
-    asset_id = _upload_asset(open(sys.argv[1], "rb"), "Test Image")
-    content, tool = _generate_content(int(sys.argv[3]), asset_id)
+def process_image(image_path, task_id):
+    with open(image_path, "rb") as image_file:
+        asset_id = upload_asset(image_file, "Test Image")
+    
+    content, tool = generate_content(task_id, asset_id)
     
     inputs = {
         "tools": tool,
@@ -83,18 +79,16 @@ if __name__ == "__main__":
     
     try:
         response_json = response.json()
-        # Extract text from response
         text_output = []
         for entry in response_json["choices"][0]["message"]["tool_calls"]:
-            arguments = json.loads(entry["function"]["arguments"])  # Ensure it's parsed as JSON
+            arguments = json.loads(entry["function"]["arguments"])
             for item in arguments:
-                if isinstance(item, list):  # Handle nested lists
+                if isinstance(item, list):
                     for sub_item in item:
                         text_output.append(sub_item.get("text", ""))
                 else:
                     text_output.append(item.get("text", ""))
-
-        # Print extracted text
-        print("\n".join(text_output))
+        return "\n".join(text_output)
     except ValueError:
-        print("Response is not in JSON format")
+        return "Response is not in JSON format"
+
